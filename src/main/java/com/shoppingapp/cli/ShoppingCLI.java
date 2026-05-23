@@ -2,6 +2,7 @@ package com.shoppingapp.cli;
 
 import com.shoppingapp.model.CartItem;
 import com.shoppingapp.model.Item;
+import com.shoppingapp.model.OrderSummary;
 import com.shoppingapp.model.ShippingOption;
 import com.shoppingapp.model.ShoppingCart;
 import com.shoppingapp.service.ItemCatalog;
@@ -11,11 +12,11 @@ import java.io.PrintStream;
 import java.util.Scanner;
 
 public class ShoppingCLI {
-    private final Scanner scanner;
     private final PrintStream printStreamOut;
     private final ItemCatalog itemCatalog;
     private final PricingService pricingService;
     private final ShoppingCart shoppingCart;
+    private final ConsoleInput input;
 
     private String customerName;
     private String state;
@@ -26,11 +27,11 @@ public class ShoppingCLI {
     }
 
     public ShoppingCLI(Scanner scanner, PrintStream printStreamOut, ItemCatalog itemCatalog, PricingService pricingService) {
-        this.scanner = scanner;
         this.printStreamOut = printStreamOut;
         this.itemCatalog = itemCatalog;
         this.pricingService = pricingService;
         this.shoppingCart = new ShoppingCart();
+        this.input = new ConsoleInput(scanner, printStreamOut);
     }
 
     public void run() {
@@ -40,7 +41,7 @@ public class ShoppingCLI {
         boolean running = true;
         while (running) {
             printMenu();
-            String choice = scanner.nextLine().trim();
+            String choice = input.prompt("choice: ");
 
             switch (choice) {
                 case "1" -> handleAddItem();
@@ -60,17 +61,13 @@ public class ShoppingCLI {
     }
 
     private void setupCustomer() {
-        printStreamOut.print("Enter your name: ");
-        customerName = scanner.nextLine().trim();
-
-        printStreamOut.print("Enter state (e.g. IL, CA, NY): ");
-        state = scanner.nextLine().trim().toUpperCase();
+        customerName = input.prompt("Enter your name: ");
+        state = input.prompt("Enter state (e.g. IL, CA, NY): ").toUpperCase();
 
         printStreamOut.println("Shipping option:");
         printStreamOut.println("1 - Standard");
         printStreamOut.println("2 - Next Day");
-        printStreamOut.print("choice: ");
-        String shipChoice = scanner.nextLine().trim();
+        String shipChoice = input.prompt("choice: ");
 
         if (shipChoice.equals("2")) {
             shippingOption = ShippingOption.NEXT_DAY;
@@ -94,7 +91,6 @@ public class ShoppingCLI {
         printStreamOut.println("5 - Remove item");
         printStreamOut.println("6 - Checkout");
         printStreamOut.println("7 - Quit");
-        printStreamOut.print("choice: ");
     }
 
     private void handleAddItem() {
@@ -103,11 +99,8 @@ public class ShoppingCLI {
             printStreamOut.println(" " + item);
         }
 
-        printStreamOut.print("item name: ");
-        String itemName = scanner.nextLine().trim();
-
-        printStreamOut.print("quntity: ");
-        String qtyInput = scanner.nextLine().trim();
+        String itemName = input.prompt("item name: ");
+        String qtyInput = input.prompt("quntity: ");
 
         // using parseInt instead of nextInt to avoid Scanner issues with leftover newlines
         try {
@@ -143,16 +136,8 @@ public class ShoppingCLI {
             return;
         }
 
-        double rawTotal = shoppingCart.getRawTotal();
-        double tax = rawTotal * pricingService.getTaxRate(state);
-        double shipping = pricingService.calculateShipping(shippingOption, rawTotal);
-        double total = pricingService.calculateTotal(rawTotal, state, shippingOption);
-
-        printStreamOut.println("Order summary:");
-        printStreamOut.printf("Subtotal: $%.2f%n", rawTotal);
-        printStreamOut.printf("Tax: $%.2f%n", tax);
-        printStreamOut.printf("Shipping: $%.2f%n", shipping);
-        printStreamOut.printf("Total: $%.2f%n", total);
+        OrderSummary summary = pricingService.summarize(shoppingCart.getRawTotal(), state, shippingOption);
+        printSummary(summary);
     }
 
     private void handleEditQuantity() {
@@ -162,11 +147,8 @@ public class ShoppingCLI {
         }
         handleViewCart();
 
-        printStreamOut.print("item name to edit: ");
-        String itemName = scanner.nextLine().trim();
-
-        printStreamOut.print("new quantity: ");
-        String qtyInput = scanner.nextLine().trim();
+        String itemName = input.prompt("item name to edit: ");
+        String qtyInput = input.prompt("new quantity: ");
 
         try {
             int newQuantity = Integer.parseInt(qtyInput);
@@ -186,8 +168,7 @@ public class ShoppingCLI {
         }
         handleViewCart();
 
-        printStreamOut.print("item name to remove: ");
-        String itemName = scanner.nextLine().trim();
+        String itemName = input.prompt("item name to remove: ");
 
         try {
             shoppingCart.removeItem(itemName);
@@ -197,32 +178,31 @@ public class ShoppingCLI {
         }
     }
 
-    // validate the total is within allowed range before completing
     private void handleCheckout() {
         if (shoppingCart.isEmpty()) {
             printStreamOut.println("cart is empty, nothing to checkout");
             return;
         }
 
-        double rawTotal = shoppingCart.getRawTotal();
-        double total = pricingService.calculateTotal(rawTotal, state, shippingOption);
+        OrderSummary summary = pricingService.summarize(shoppingCart.getRawTotal(), state, shippingOption);
 
         try {
-            pricingService.validatePurchaseAmount(total);
+            pricingService.validatePurchaseAmount(summary.getTotal());
         } catch (IllegalStateException e) {
             printStreamOut.println("Error: " + e.getMessage());
             return;
         }
 
-        double tax = rawTotal * pricingService.getTaxRate(state);
-        double shipping = pricingService.calculateShipping(shippingOption, rawTotal);
-
-        printStreamOut.println("Order summary:");
-        printStreamOut.printf("Subtotal: $%.2f%n", rawTotal);
-        printStreamOut.printf("Tax: $%.2f%n", tax);
-        printStreamOut.printf("Shipping: $%.2f%n", shipping);
-        printStreamOut.printf("Total: $%.2f%n", total);
+        printSummary(summary);
         printStreamOut.println();
         printStreamOut.println("Transaction completed.");
+    }
+
+    private void printSummary(OrderSummary summary) {
+        printStreamOut.println("Order summary:");
+        printStreamOut.printf("Subtotal: $%.2f%n", summary.getSubtotal());
+        printStreamOut.printf("Tax: $%.2f%n", summary.getTax());
+        printStreamOut.printf("Shipping: $%.2f%n", summary.getShipping());
+        printStreamOut.printf("Total: $%.2f%n", summary.getTotal());
     }
 }

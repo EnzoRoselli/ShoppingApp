@@ -1,5 +1,6 @@
 package com.shoppingapp.service;
 
+import com.shoppingapp.model.OrderSummary;
 import com.shoppingapp.model.ShippingOption;
 
 public class PricingService {
@@ -26,6 +27,13 @@ public class PricingService {
         double tax = rawTotal * getTaxRate(state);
         double shipping = calculateShipping(option, rawTotal);
         return rawTotal + tax + shipping;
+    }
+
+    public OrderSummary summarize(double rawTotal, String state, ShippingOption option) {
+        double tax = rawTotal * getTaxRate(state);
+        double shipping = calculateShipping(option, rawTotal);
+        double total = rawTotal + tax + shipping;
+        return new OrderSummary(rawTotal, tax, shipping, total);
     }
 
     public void validatePurchaseAmount(double total) {
